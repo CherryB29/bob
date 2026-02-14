@@ -308,96 +308,129 @@
         }
 
         function spin() {
-            const btn = document.getElementById('spin-btn'); 
-            const newBadge = document.getElementById('new-badge');
-            const card = document.getElementById('main-card');
-            if(btn.disabled) return;
-            
-            document.querySelectorAll('.item').forEach(i => i.classList.remove('selected'));
-            
-            const now = Date.now();
-            if (stats.lastSpinTime && (now - stats.lastSpinTime < 150)) unlock('flash');
-            
-            btn.disabled = true; 
-            newBadge.classList.remove('show', 'original-badge', 'legendary-badge', 'badge-new-style');
-            card.classList.remove('legendary-card');
-            document.getElementById('share-btn').style.opacity = '0';
-            document.getElementById('comment').style.opacity = '0';
-            
-            let basePool = [...menus, ...stats.customMenus, "꽝"];
-            let finalMenu = "";
+    const btn = document.getElementById('spin-btn'); 
+    const newBadge = document.getElementById('new-badge');
+    const card = document.getElementById('main-card');
+    if(btn.disabled) return;
+    
+    document.querySelectorAll('.item').forEach(i => i.classList.remove('selected'));
+    
+    const now = Date.now();
+    if (stats.lastSpinTime && (now - stats.lastSpinTime < 150)) unlock('flash');
+    
+    // 1. 시작 시 버튼 비활성화
+    btn.disabled = true; 
+    newBadge.classList.remove('show', 'original-badge', 'legendary-badge', 'badge-new-style');
+    card.classList.remove('legendary-card');
+    document.getElementById('share-btn').style.opacity = '0';
+    document.getElementById('comment').style.opacity = '0';
+    
+    let basePool = [...menus, ...stats.customMenus, "꽝"];
+    let finalMenu = "";
 
-            if (forcedMenu) {
-                finalMenu = forcedMenu;
-                forcedMenu = null;
-            } else {
-                let selectionPool = [...basePool, "LEGEND_GROUP"];
-                let picked = selectionPool[Math.floor(Math.random() * selectionPool.length)];
-                if (picked === "LEGEND_GROUP") {
-                    finalMenu = legendMenus[Math.floor(Math.random() * legendMenus.length)];
-                } else {
-                    finalMenu = picked;
-                }
+    if (forcedMenu) {
+        finalMenu = forcedMenu;
+        forcedMenu = null;
+    } else {
+        let selectionPool = [...basePool, "LEGEND_GROUP"];
+        let picked = selectionPool[Math.floor(Math.random() * selectionPool.length)];
+        if (picked === "LEGEND_GROUP") {
+            finalMenu = legendMenus[Math.floor(Math.random() * legendMenus.length)];
+        } else {
+            finalMenu = picked;
+        }
+    }
+
+    let displayMenus = [...basePool].sort(() => Math.random() - 0.5);
+    if (!displayMenus.includes(finalMenu)) displayMenus.push(finalMenu);
+    displayMenus.sort(() => Math.random() - 0.5);
+    
+    window.currentReelItems = displayMenus;
+    const reel = document.getElementById('reel');
+    reel.innerHTML = [...displayMenus, ...displayMenus, ...displayMenus].map(m => `<div class="item">${m}</div>`).join('');
+
+    let idx = displayMenus.indexOf(finalMenu);
+    const targetIdx = (displayMenus.length * 2) + idx;
+    reel.style.transition = 'none';
+    reel.style.transform = `translateY(-${displayMenus.length * 80}px)`;
+    void reel.offsetHeight; 
+    
+    const duration = 3;
+    const easing = 'cubic-bezier(0.1, 0.8, 0.1, 1)';
+    reel.style.transition = `transform ${duration}s ${easing}`;
+    reel.style.transform = `translateY(-${targetIdx * 80}px)`;
+
+    setTimeout(() => {
+        const items = document.querySelectorAll('.item');
+        if (items[targetIdx]) items[targetIdx].classList.add('selected');
+        const historyDate = new Date().toLocaleString('ko-KR', { month:'short', day:'numeric', hour:'2-digit', minute:'2-digit' });
+        
+        if (finalMenu === stats.lastMenu) unlock('destiny');
+
+        let isLegend = false; // 전설 여부 체크용 변수
+
+        if (finalMenu === "꽝") {
+            document.getElementById('comment').innerText = "오늘은 다이어트인가요? 가끔은 비우는 것도 방법이죠.";
+            stats.total++; stats.history.unshift({ menu: "꽝", date: historyDate }); unlock('diet');
+        } else if (stats.customMenus.includes(finalMenu)) {
+            document.getElementById('comment').innerText = stats.customDescriptions[finalMenu] || "당신이 창조한 특별한 미식의 순간입니다.";
+            newBadge.innerText = "ORIGINAL"; newBadge.classList.add('original-badge', 'show');
+            confetti({ particleCount: 60, spread: 100, origin: { y: 0.7 }, colors: ['#d4af37', '#ffffff'] });
+            stats.total++; stats.history.unshift({ menu: finalMenu, date: historyDate });
+        } else {
+            const isNew = !stats.collected.includes(finalMenu);
+            isLegend = legendMenus.includes(finalMenu); // 전설 여부 저장
+            updateStats(finalMenu);
+            document.getElementById('comment').innerText = menuData[finalMenu][0];
+
+            if (isLegend) {
+                newBadge.innerText = "LEGENDARY"; newBadge.classList.add('legendary-badge', 'show');
+                card.classList.add('legendary-card');
+                fireLegendaryFireworks();
+                unlock('legend_discovery');
+            } else if (isNew) {
+                newBadge.innerText = "NEW"; newBadge.classList.add('badge-new-style', 'show');
+                confetti({ particleCount: 50, spread: 80, origin: { y: 0.7 }, colors: ['#ff3b30', '#ffffff'] });
+            } else { 
+                confetti({ particleCount: 30, spread: 60, origin: { y: 0.8 } }); 
             }
+        }
+        
+        document.getElementById('comment').style.opacity = '1';
+        document.getElementById('share-btn').style.opacity = '1'; 
+        document.getElementById('share-btn').style.pointerEvents = 'auto';
 
-            let displayMenus = [...basePool].sort(() => Math.random() - 0.5);
-            if (!displayMenus.includes(finalMenu)) displayMenus.push(finalMenu);
-            displayMenus.sort(() => Math.random() - 0.5);
+        // 2. 버튼 활성화 로직 분기
+        if (isLegend) {
+            // 전설 메뉴일 경우 3초간 버튼 텍스트 변경 및 대기
+            const originalText = "메뉴 뽑기";
+            let timeLeft = 3;
             
-            window.currentReelItems = displayMenus;
-            const reel = document.getElementById('reel');
-            reel.innerHTML = [...displayMenus, ...displayMenus, ...displayMenus].map(m => `<div class="item">${m}</div>`).join('');
-
-            let idx = displayMenus.indexOf(finalMenu);
-            const targetIdx = (displayMenus.length * 2) + idx;
-            reel.style.transition = 'none';
-            reel.style.transform = `translateY(-${displayMenus.length * 80}px)`;
-            void reel.offsetHeight; 
-            
-            const duration = 3;
-            const easing = 'cubic-bezier(0.1, 0.8, 0.1, 1)';
-            reel.style.transition = `transform ${duration}s ${easing}`;
-            reel.style.transform = `translateY(-${targetIdx * 80}px)`;
+            const timer = setInterval(() => {
+                timeLeft--;
+                if(timeLeft > 0) {
+                    btn.innerText = `메뉴 뽑기`;
+                } else {
+                    clearInterval(timer);
+                }
+            }, 1000);
 
             setTimeout(() => {
-                const items = document.querySelectorAll('.item');
-                if (items[targetIdx]) items[targetIdx].classList.add('selected');
-                const historyDate = new Date().toLocaleString('ko-KR', { month:'short', day:'numeric', hour:'2-digit', minute:'2-digit' });
-                
-                if (finalMenu === stats.lastMenu) unlock('destiny');
-
-                if (finalMenu === "꽝") {
-                    document.getElementById('comment').innerText = "오늘은 다이어트인가요? 가끔은 비우는 것도 방법이죠.";
-                    stats.total++; stats.history.unshift({ menu: "꽝", date: historyDate }); unlock('diet');
-                } else if (stats.customMenus.includes(finalMenu)) {
-                    document.getElementById('comment').innerText = stats.customDescriptions[finalMenu] || "당신이 창조한 특별한 미식의 순간입니다.";
-                    newBadge.innerText = "ORIGINAL"; newBadge.classList.add('original-badge', 'show');
-                    confetti({ particleCount: 60, spread: 100, origin: { y: 0.7 }, colors: ['#d4af37', '#ffffff'] });
-                    stats.total++; stats.history.unshift({ menu: finalMenu, date: historyDate });
-                } else {
-                    const isNew = !stats.collected.includes(finalMenu);
-                    const isLegend = legendMenus.includes(finalMenu);
-                    updateStats(finalMenu);
-                    document.getElementById('comment').innerText = menuData[finalMenu][0];
-
-                    if (isLegend) {
-                        newBadge.innerText = "LEGENDARY"; newBadge.classList.add('legendary-badge', 'show');
-                        card.classList.add('legendary-card');
-                        fireLegendaryFireworks();
-                        unlock('legend_discovery');
-                    } else if (isNew) {
-                        newBadge.innerText = "NEW"; newBadge.classList.add('badge-new-style', 'show');
-                        confetti({ particleCount: 50, spread: 80, origin: { y: 0.7 }, colors: ['#ff3b30', '#ffffff'] });
-                    } else { 
-                        confetti({ particleCount: 30, spread: 60, origin: { y: 0.8 } }); 
-                    }
-                }
-                document.getElementById('comment').style.opacity = '1';
-                btn.disabled = false; document.getElementById('share-btn').style.opacity = '1'; document.getElementById('share-btn').style.pointerEvents = 'auto';
-                stats.lastMenu = finalMenu; stats.lastSpinTime = Date.now(); save();
-                updateStatsLock();
-            }, duration * 1000);
+                btn.disabled = false;
+                btn.innerText = originalText;
+            }, 3000);
+        } else {
+            // 일반 메뉴일 경우 즉시 활성화
+            btn.disabled = false;
         }
+
+        stats.lastMenu = finalMenu; 
+        stats.lastSpinTime = Date.now(); 
+        save();
+        updateStatsLock();
+    }, duration * 1000);
+}
+
 
         function fireLegendaryFireworks() {
             const end = Date.now() + 3000;
