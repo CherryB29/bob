@@ -98,7 +98,6 @@
         .ach-desc { font-size: 12px; color: var(--sub-text); line-height: 1.4; margin-top: 2px; }
         .ach-progress-text { position: absolute; right: 0; top: 18px; font-size: 11px; font-weight: 800; color: var(--sub-text); }
         
-        /* New 배지 스타일 */
         .new-indicator { background: var(--danger); color: white; font-size: 9px; padding: 2px 5px; border-radius: 5px; font-weight: 800; position: absolute; top: 50%; right: 15px; transform: translateY(-50%); }
         .ach-new-indicator { background: var(--danger); color: white; font-size: 9px; padding: 2px 4px; border-radius: 4px; font-weight: 800; margin-left: 6px; }
 
@@ -396,15 +395,15 @@
                 const snap = await getDocs(q);
                 let html = "";
                 let rank = 1;
-                const totalAchCount = achievements.length;
+                const totalAchCount = (window.achievementsList || []).length;
 
                 snap.forEach(d => {
                     const data = d.data();
                     const isMe = auth.currentUser && d.id === auth.currentUser.uid;
                     const coll = data.collected || [];
                     const achs = data.achievements || [];
-                    const isLegendMaster = window.allLegendMenus.every(m => coll.includes(m));
-                    const isCommonMaster = coll.filter(m => window.allCommonMenus.hasOwnProperty(m)).length >= Object.keys(window.allCommonMenus).length;
+                    const isLegendMaster = (window.allLegendMenus || []).every(m => coll.includes(m));
+                    const isCommonMaster = coll.filter(m => window.allCommonMenus && window.allCommonMenus.hasOwnProperty(m)).length >= (window.menusList ? window.menusList.length : 0);
 
                     let borderClass = "";
                     if(isLegendMaster) borderClass = "border-legendary";
@@ -448,9 +447,13 @@
             const todayStr = new Date().toDateString();
 
             try {
+                // 오늘 보낸 좋아요 수 체크
                 const q = query(collection(db, "likeLogs"), where("from", "==", user.uid));
                 const logSnap = await getDocs(q);
-                const todayLogs = logSnap.docs.filter(doc => doc.data().createdAt?.toDate().toDateString() === todayStr);
+                const todayLogs = logSnap.docs.filter(doc => {
+                    const data = doc.data();
+                    return data.createdAt && data.createdAt.toDate().toDateString() === todayStr;
+                });
 
                 if (todayLogs.length >= 10) {
                     alert("오늘은 더 이상 좋아요를 보낼 수 없습니다. (하루 10회 제한)");
@@ -500,41 +503,44 @@
                     const collCount = (data.collected || []).length;
                     const unlockedAchs = data.achievements || [];
                     const isMe = auth.currentUser && uid === auth.currentUser.uid;
+                    const achList = window.achievementsList || [];
                     
-                    let achHtml = achievements.map(a => {
+                    let achHtml = achList.map(a => {
                         const isUnlocked = unlockedAchs.includes(a.id);
                         const displayName = (a.hidden && !isUnlocked) ? "???" : a.name;
                         return `<div style="text-align:center; opacity:${isUnlocked ? '1' : '0.2'};"><div style="font-size:24px;">${a.icon}</div><div style="font-size:9px; font-weight:700;">${displayName}</div></div>`;
                     }).join('');
 
+                    // --- 좋아요 로그 가져오기 로직 ---
                     let likeLogsHtml = "";
-                    if (isMe) {
-                        const logQ = query(collection(db, "likeLogs"), where("to", "==", uid), orderBy("createdAt", "desc"), limit(20));
+                    try {
+                        const logQ = query(collection(db, "likeLogs"), where("to", "==", uid), orderBy("createdAt", "desc"), limit(30));
                         const logsSnap = await getDocs(logQ);
                         
                         if (!logsSnap.empty) {
                             const aggregated = {};
                             logsSnap.forEach(ld => {
                                 const ldData = ld.data();
-                                const sender = ldData.fromName || "익명 미식가";
+                                const senderId = ldData.from; // 중복 방지를 위한 ID 기준 집계
+                                const senderName = ldData.fromName || "익명 미식가";
                                 const avatar = ldData.fromAvatar || "👤";
-                                if(!aggregated[sender]) aggregated[sender] = {count: 0, av: avatar};
-                                aggregated[sender].count++;
+                                if(!aggregated[senderId]) aggregated[senderId] = {name: senderName, count: 0, av: avatar};
+                                aggregated[senderId].count++;
                             });
                             
                             likeLogsHtml = `<div style="width:100%; margin-top:20px; text-align:left;">
-                                <h3 style="font-size:14px; margin-bottom:12px;">나를 응원하는 사람들 (최근 20건)</h3>
-                                ${Object.keys(aggregated).map(name => `
+                                <h3 style="font-size:14px; margin-bottom:12px;">응원 보낸 사람들 (최근 기록)</h3>
+                                ${Object.keys(aggregated).map(id => `
                                     <div class="like-log-item">
-                                        <div class="like-log-user"><span>${aggregated[name].av}</span> ${name}</div>
-                                        <div class="like-log-count">❤️ ${aggregated[name].count}개</div>
+                                        <div class="like-log-user"><span>${aggregated[id].av}</span> ${aggregated[id].name}</div>
+                                        <div class="like-log-count">❤️ ${aggregated[id].count}개</div>
                                     </div>
                                 `).join('')}
                             </div>`;
                         } else {
-                            likeLogsHtml = `<div style="width:100%; margin-top:20px; text-align:center; color:var(--sub-text); font-size:13px;">아직 응원이 없어요. 활동을 늘려보세요!</div>`;
+                            likeLogsHtml = `<div style="width:100%; margin-top:20px; text-align:center; color:var(--sub-text); font-size:13px;">아직 응원 기록이 없어요.</div>`;
                         }
-                    }
+                    } catch(logErr) { console.error("Log fetch error", logErr); }
 
                     body.innerHTML = `
                         <div style="display:flex; flex-direction:column; align-items:center; padding:20px 0;">
@@ -598,6 +604,7 @@
 
         window.allCommonMenus = Object.fromEntries(Object.entries(menuData).filter(([_,v]) => v[1] !== 'L'));
         window.allLegendMenus = legendMenus;
+        window.menusList = menus;
 
         const STORAGE_KEY = 'bob_v1';
         let stats = JSON.parse(localStorage.getItem(STORAGE_KEY)) || {};
@@ -623,6 +630,7 @@
             { id: 'legend_collector', icon: '💎', name: '전설의 미식가', desc: '모든 전설 메뉴(7종) 수집 완료!', cond: s => legendMenus.every(m => s.collected.includes(m)), hidden: true },
             { id: 'master', icon: '🏆', name: '미식의 끝', desc: '모든 일반 메뉴 수집 완료!', cond: s => s.collected.filter(m => menus.includes(m)).length >= menus.length, goal: menus.length, current: s => s.collected.filter(m => menus.includes(m)).length }
         ];
+        window.achievementsList = achievements;
 
         let toastQueue = []; let isToastShowing = false; let isMaster = false; let titleClickCount = 0; let titleClickTimer = null; let forcedMenu = null;
         let sessionStartTime = Date.now();
@@ -702,14 +710,18 @@
             const ov = document.getElementById('sidebar-overlay');
             const isOpen = sb.classList.toggle('open');
             ov.style.display = isOpen ? 'block' : 'none';
-            if (isOpen) checkNewAchBadge();
+            if (isOpen) {
+                checkNewAchBadge();
+                updateSidebarProgress();
+            }
         }
 
         function updateSidebarProgress() {
             const count = (window.stats.collected || []).length; 
             const total = menus.length + legendMenus.length;
             const rate = Math.round((count / total) * 100);
-            document.getElementById('side-rate-text').innerText = `${count} / ${total}`;
+            const rateText = document.getElementById('side-rate-text');
+            if(rateText) rateText.innerText = `${count} / ${total}`;
             const fill = document.getElementById('side-progress-fill');
             if(fill) fill.style.width = `${Math.min(rate, 100)}%`;
         }
@@ -939,7 +951,7 @@
                         </div>
                     </div>` : '';
                 
-                const gUser = window.firebaseAuth.currentUser;
+                const gUser = window.firebaseAuth && window.firebaseAuth.currentUser;
                 const isGoogle = gUser && !gUser.isAnonymous;
 
                 body.innerHTML = `
